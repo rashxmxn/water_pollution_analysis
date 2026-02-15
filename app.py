@@ -8,7 +8,6 @@ import numpy as np
 # Force light theme
 st.set_page_config(
     page_title="Мониторинг загрязнения воды",
-    page_icon="💧",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -30,7 +29,7 @@ st.markdown("""
 @st.cache_data
 def load_heavy_metals_data():
     """Load and process heavy metals data"""
-    df = pd.read_excel('Данные по ТМ.xlsx', sheet_name='Sheet1')
+    df = pd.read_excel('data/Данные по ТМ.xlsx', sheet_name='Sheet1')
     
     # Process the data to create a structured format
     data_list = []
@@ -104,7 +103,7 @@ def load_heavy_metals_data():
 @st.cache_data
 def load_index_data():
     """Load water quality index data"""
-    df = pd.read_excel('Индекс.xlsx')
+    df = pd.read_excel('data/Индекс.xlsx')
     
     # Clean the data - keep only the first 5 rows with actual data
     df_clean = df.iloc[:5].copy()
@@ -121,24 +120,30 @@ def load_index_data():
 @st.cache_data
 def load_discharge_data():
     """Load water discharge data"""
-    df = pd.read_excel('расход.xlsx')
+    df = pd.read_excel('data/расход.xlsx')
+    
+    # Skip the first row (Average) and use actual data
+    df_data = df.iloc[1:].copy()
     
     # Extract years from columns (skip first column 'By year')
     years = [col for col in df.columns if col != 'By year']
     
-    # First row contains averages
-    averages = df.iloc[0, 1:].values
+    # Calculate averages from the actual data
+    averages = []
+    for year in years:
+        year_data = pd.to_numeric(df_data[year], errors='coerce')
+        avg = year_data.mean()
+        averages.append(avg)
     
     discharge_data = pd.DataFrame({
         'Year': years,
         'Average_Discharge': averages
     })
     
-    # Convert year to int and average to float
+    # Convert year to int
     discharge_data['Year'] = discharge_data['Year'].astype(int)
-    discharge_data['Average_Discharge'] = pd.to_numeric(discharge_data['Average_Discharge'], errors='coerce')
     
-    return discharge_data, df
+    return discharge_data, df_data
 
 
 # Load data
@@ -152,10 +157,10 @@ except Exception as e:
 
 
 # Sidebar
-st.sidebar.title("💧 Навигация")
+st.sidebar.title("Навигация")
 page = st.sidebar.radio(
     "Выберите раздел:",
-    ["📊 Обзор", "🔬 Тяжелые металлы", "💦 Расход воды", "📈 Сравнение точек", "📉 Тренды"]
+    ["Обзор", "Тяжелые металлы", "Расход воды", "Сравнение точек", "Тренды", "Выводы"]
 )
 
 st.sidebar.markdown("---")
@@ -167,14 +172,13 @@ st.sidebar.info("""
     - **T2** (бывший Yer 3)
     - **T3** (бывший Yer 4)
     - **T4** (бывший Yer 5)
-    
-    Период: 2020-2023
+
 """)
 
 
 # Main content
-if page == "📊 Обзор":
-    st.title("📊 Обзор качества воды")
+if page == "Обзор":
+    st.title("Обзор качества воды")
     st.markdown("### Общая информация о состоянии водных ресурсов")
     
     # Water quality classes
@@ -262,14 +266,14 @@ if page == "📊 Обзор":
             current_class = index_filtered[index_filtered['Year'] == 2023][location].values[0]
             
             st.metric(
-                label=f"📍 {location}",
+                label=f"{location}",
                 value=f"Класс {int(current_class)}",
                 delta=f"Средний: {avg_class:.1f}"
             )
 
 
-elif page == "🔬 Тяжелые металлы":
-    st.title("🔬 Анализ тяжелых металлов")
+elif page == "Тяжелые металлы":
+    st.title("Анализ тяжелых металлов")
     st.markdown("### Концентрация тяжелых металлов в воде (мг/л)")
     
     # Filter for 2020-2023
@@ -448,14 +452,80 @@ elif page == "🔬 Тяжелые металлы":
     )
     
     st.plotly_chart(fig, use_container_width=True)
+    
+    # 3D Visualization
+    st.markdown("## 3D визуализация концентраций")
+    
+    # Location selector for 3D visualization
+    selected_location_3d = st.selectbox(
+        "Выберите точку мониторинга для 3D визуализации:",
+        ['T1', 'T2', 'T3', 'T4']
+    )
+    
+    # Calculate average concentrations per year for each metal and location
+    metals_avg = metals_filtered.groupby(['Year', 'Metal', 'Location'])['Value'].mean().reset_index()
+    
+    # Map metals to numeric values for 3D positioning
+    metal_map = {'Mn': 1, 'Zn': 2, 'Cu': 3, 'Cd': 4}
+    metals_avg['Metal_Numeric'] = metals_avg['Metal'].map(metal_map)
+    
+    # Filter by selected location
+    loc_data = metals_avg[metals_avg['Location'] == selected_location_3d]
+    
+    colors = {'T1': 'blue', 'T2': 'green', 'T3': 'red', 'T4': 'orange'}
+    
+    fig = go.Figure()
+    
+    # Add lines connecting points for the same metal across years
+    for metal in ['Mn', 'Zn', 'Cu', 'Cd']:
+        metal_data = loc_data[loc_data['Metal'] == metal].sort_values('Year')
+        
+        fig.add_trace(go.Scatter3d(
+            x=metal_data['Year'],
+            y=metal_data['Metal_Numeric'],
+            z=metal_data['Value'],
+            mode='lines+markers',
+            name=metal,
+            marker=dict(
+                size=10,
+                color=colors[selected_location_3d],
+                opacity=0.9,
+                line=dict(color='white', width=2)
+            ),
+            line=dict(width=4, color=colors[selected_location_3d]),
+            text=[f"{m}<br>Year: {y}<br>Avg: {v:.4f} mg/L" 
+                  for m, y, v in zip(metal_data['Metal'], metal_data['Year'], metal_data['Value'])],
+            hovertemplate='<b>%{text}</b><extra></extra>'
+        ))
+    
+    fig.update_layout(
+        title=f"3D Visualization: Average Metal Concentrations - {selected_location_3d}",
+        scene=dict(
+            xaxis=dict(title='Year', gridcolor='lightgray', dtick=1),
+            yaxis=dict(
+                title='Metal Type',
+                tickmode='array',
+                tickvals=[1, 2, 3, 4],
+                ticktext=['Mn', 'Zn', 'Cu', 'Cd'],
+                gridcolor='lightgray'
+            ),
+            zaxis=dict(title='Average Concentration (mg/L)', gridcolor='lightgray'),
+            bgcolor='white'
+        ),
+        height=600,
+        showlegend=True,
+        paper_bgcolor='white'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
 
 
-elif page == "💦 Расход воды":
-    st.title("💦 Анализ расхода воды")
+elif page == "Расход воды":
+    st.title("Анализ расхода воды")
     st.markdown("### Средний годовой расход воды (м³/с)")
     
-    # Filter for 2020-2023
-    discharge_filtered = discharge_df[discharge_df['Year'].between(2020, 2023)]
+    # Show all data from 2014 onwards
+    discharge_filtered = discharge_df[discharge_df['Year'] >= 2014]
     
     # Line chart
     col1, col2 = st.columns([2, 1])
@@ -518,16 +588,16 @@ elif page == "💦 Расход воды":
     # Detailed monthly data table
     st.markdown("### Детальные данные по годам")
     
-    # Show the raw data for 2020-2023
-    years_to_show = [2020, 2021, 2022, 2023]
-    detailed_data = discharge_raw[['By year'] + years_to_show]
-    detailed_data.columns = ['Month/Day'] + [str(year) for year in years_to_show]
+    # Show all data from 2014 onwards (without Month/Day column)
+    all_years = [col for col in discharge_raw.columns if isinstance(col, int) and col >= 2014]
+    detailed_data = discharge_raw[all_years].copy()
+    detailed_data.columns = [str(year) for year in all_years]
     
-    st.dataframe(detailed_data.head(35), use_container_width=True, height=400)
+    st.dataframe(detailed_data, use_container_width=True, height=400)
 
 
-elif page == "📈 Сравнение точек":
-    st.title("📈 Сравнение точек мониторинга")
+elif page == "Сравнение точек":
+    st.title("Сравнение точек мониторинга")
     st.markdown("### Сопоставление показателей между T1, T2, T3, T4")
     
     # Filter for 2020-2023
@@ -638,8 +708,8 @@ elif page == "📈 Сравнение точек":
     st.dataframe(combined_summary, use_container_width=True)
 
 
-elif page == "📉 Тренды":
-    st.title("📉 Анализ трендов")
+elif page == "Тренды":
+    st.title("Анализ трендов")
     st.markdown("### Долгосрочные тренды загрязнения воды (2020-2023)")
     
     # Filter for 2020-2023
@@ -757,37 +827,56 @@ elif page == "📉 Тренды":
     # Calculate year-over-year changes
     metals_2020 = metals_filtered[metals_filtered['Year'] == 2020]['Value'].mean()
     metals_2023 = metals_filtered[metals_filtered['Year'] == 2023]['Value'].mean()
-    metals_change = ((metals_2023 - metals_2020) / metals_2020) * 100
     
-    discharge_2020 = discharge_filtered[discharge_filtered['Year'] == 2020]['Average_Discharge'].values[0]
-    discharge_2023 = discharge_filtered[discharge_filtered['Year'] == 2023]['Average_Discharge'].values[0]
-    discharge_change = ((discharge_2023 - discharge_2020) / discharge_2020) * 100
+    if pd.notna(metals_2020) and pd.notna(metals_2023) and metals_2020 != 0:
+        metals_change = ((metals_2023 - metals_2020) / metals_2020) * 100
+    else:
+        metals_change = 0
+    
+    discharge_2020_data = discharge_filtered[discharge_filtered['Year'] == 2020]['Average_Discharge']
+    discharge_2023_data = discharge_filtered[discharge_filtered['Year'] == 2023]['Average_Discharge']
+    
+    if len(discharge_2020_data) > 0 and len(discharge_2023_data) > 0:
+        discharge_2020 = discharge_2020_data.values[0]
+        discharge_2023 = discharge_2023_data.values[0]
+        if pd.notna(discharge_2020) and pd.notna(discharge_2023) and discharge_2020 != 0:
+            discharge_change = ((discharge_2023 - discharge_2020) / discharge_2020) * 100
+        else:
+            discharge_change = 0
+    else:
+        discharge_2020 = 0
+        discharge_2023 = 0
+        discharge_change = 0
     
     cols = st.columns(3)
     
     with cols[0]:
         st.metric(
             label="Изменение концентрации металлов",
-            value=f"{metals_2023:.4f} мг/л",
-            delta=f"{metals_change:+.1f}% с 2020"
+            value=f"{metals_2023:.4f} мг/л" if pd.notna(metals_2023) else "N/A",
+            delta=f"{metals_change:+.1f}% с 2020" if metals_change != 0 else None
         )
     
     with cols[1]:
         st.metric(
             label="Изменение расхода воды",
-            value=f"{discharge_2023:.2f} м³/с",
-            delta=f"{discharge_change:+.1f}% с 2020"
+            value=f"{discharge_2023:.2f} м³/с" if pd.notna(discharge_2023) else "N/A",
+            delta=f"{discharge_change:+.1f}% с 2020" if discharge_change != 0 else None
         )
     
     with cols[2]:
         avg_quality_2020 = index_filtered[index_filtered['Year'] == 2020][['T1', 'T2', 'T3', 'T4']].mean().mean()
         avg_quality_2023 = index_filtered[index_filtered['Year'] == 2023][['T1', 'T2', 'T3', 'T4']].mean().mean()
-        quality_change = avg_quality_2023 - avg_quality_2020
+        
+        if pd.notna(avg_quality_2020) and pd.notna(avg_quality_2023):
+            quality_change = avg_quality_2023 - avg_quality_2020
+        else:
+            quality_change = 0
         
         st.metric(
             label="Изменение класса качества",
-            value=f"{avg_quality_2023:.1f}",
-            delta=f"{quality_change:+.1f} с 2020"
+            value=f"{avg_quality_2023:.1f}" if pd.notna(avg_quality_2023) else "N/A",
+            delta=f"{quality_change:+.1f} с 2020" if quality_change != 0 else None
         )
     
     # Detailed statistics table
@@ -805,11 +894,170 @@ elif page == "📉 Тренды":
     st.dataframe(detailed_stats, use_container_width=True)
 
 
+elif page == "Выводы":
+    st.title("Выводы и рекомендации")
+    st.markdown("### Анализ состояния качества воды (2020-2023)")
+    
+    # Calculate key metrics for conclusions
+    metals_filtered = metals_df[metals_df['Year'].between(2020, 2023)]
+    index_filtered = index_df[index_df['Year'].between(2020, 2023)]
+    discharge_filtered = discharge_df[discharge_df['Year'].between(2020, 2023)]
+    
+    # Overall summary
+    st.markdown("## Общие выводы")
+    
+    st.markdown("""
+    На основе комплексного анализа данных мониторинга четырех точек наблюдения за период 2020-2023 годов можно сделать следующие выводы:
+    """)
+    
+    # Key findings in columns
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### Качество воды")
+        
+        # Calculate average quality class by location
+        avg_quality = index_filtered[['T1', 'T2', 'T3', 'T4']].mean()
+        best_location = avg_quality.idxmin()
+        worst_location = avg_quality.idxmax()
+        
+        st.markdown(f"""
+        **Основные показатели:**
+        - Лучшее качество воды: **{best_location}** (средний класс {avg_quality[best_location]:.1f})
+        - Наибольшее загрязнение: **{worst_location}** (средний класс {avg_quality[worst_location]:.1f})
+        - Средний класс качества: **{avg_quality.mean():.1f}**
+        
+        Качество воды на всех точках мониторинга находится в диапазоне от чистой до умеренно загрязненной.
+        """)
+    
+    with col2:
+        st.markdown("### Тяжелые металлы")
+        
+        # Calculate average concentrations
+        avg_metals = metals_filtered.groupby('Metal')['Value'].mean().sort_values(ascending=False)
+        
+        st.markdown("""
+        **Средние концентрации (мг/л):**
+        """)
+        
+        for metal, value in avg_metals.items():
+            metal_name = {'Mn': 'Марганец', 'Zn': 'Цинк', 'Cu': 'Медь', 'Cd': 'Кадмий'}[metal]
+            st.markdown(f"- **{metal_name} ({metal})**: {value:.4f}")
+        
+        st.markdown("""
+        
+        Наблюдается варьирование концентраций тяжелых металлов по точкам мониторинга и временным периодам.
+        """)
+    
+    # Trends analysis
+    st.markdown("## Динамика изменений")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    # Water quality trend
+    quality_2020 = index_filtered[index_filtered['Year'] == 2020][['T1', 'T2', 'T3', 'T4']].mean().mean()
+    quality_2023 = index_filtered[index_filtered['Year'] == 2023][['T1', 'T2', 'T3', 'T4']].mean().mean()
+    
+    if pd.notna(quality_2020) and pd.notna(quality_2023):
+        quality_trend = quality_2023 - quality_2020
+    else:
+        quality_trend = 0
+    
+    with col1:
+        st.metric(
+            "Изменение качества воды",
+            f"{quality_2023:.1f}" if pd.notna(quality_2023) else "N/A",
+            f"{quality_trend:+.1f}" if quality_trend != 0 else None,
+            help="Средний класс качества воды (2020 → 2023)"
+        )
+    
+    # Metals concentration trend
+    metals_2020 = metals_filtered[metals_filtered['Year'] == 2020]['Value'].mean()
+    metals_2023 = metals_filtered[metals_filtered['Year'] == 2023]['Value'].mean()
+    
+    if pd.notna(metals_2020) and pd.notna(metals_2023) and metals_2020 != 0:
+        metals_trend = ((metals_2023 - metals_2020) / metals_2020) * 100
+    else:
+        metals_trend = 0
+    
+    with col2:
+        st.metric(
+            "Концентрация металлов",
+            f"{metals_2023:.4f} мг/л" if pd.notna(metals_2023) else "N/A",
+            f"{metals_trend:+.1f}%" if metals_trend != 0 else None,
+            help="Средняя концентрация (2020 → 2023)"
+        )
+    
+    # Discharge trend
+    discharge_2020_data = discharge_filtered[discharge_filtered['Year'] == 2020]['Average_Discharge']
+    discharge_2023_data = discharge_filtered[discharge_filtered['Year'] == 2023]['Average_Discharge']
+    
+    if len(discharge_2020_data) > 0 and len(discharge_2023_data) > 0:
+        discharge_2020 = discharge_2020_data.values[0]
+        discharge_2023 = discharge_2023_data.values[0]
+        if pd.notna(discharge_2020) and pd.notna(discharge_2023) and discharge_2020 != 0:
+            discharge_trend = ((discharge_2023 - discharge_2020) / discharge_2020) * 100
+        else:
+            discharge_trend = 0
+    else:
+        discharge_2023 = 0
+        discharge_trend = 0
+    
+    with col3:
+        st.metric(
+            "Расход воды",
+            f"{discharge_2023:.1f} м³/с" if pd.notna(discharge_2023) else "N/A",
+            f"{discharge_trend:+.1f}%" if discharge_trend != 0 else None,
+            help="Средний годовой расход (2020 → 2023)"
+        )
+    
+    # Recommendations
+    st.markdown("## Рекомендации")
+    
+    st.markdown("""
+    На основе проведенного анализа рекомендуется:
+    
+    1. **Продолжение мониторинга**
+       - Поддерживать регулярный мониторинг качества воды на всех точках
+       - Увеличить частоту пробоотбора в точках с наибольшим загрязнением
+       - Расширить спектр контролируемых параметров
+    
+    2. **Меры по улучшению качества воды**
+       - Выявить и устранить источники загрязнения
+       - Разработать план мероприятий по снижению концентрации тяжелых металлов
+       - Внедрить системы очистки воды при необходимости
+    
+    3. **Анализ и прогнозирование**
+       - Использовать собранные данные для прогнозирования трендов
+       - Разработать систему раннего оповещения о превышении пороговых значений
+       - Проводить регулярный анализ данных для оценки эффективности принимаемых мер
+    
+    4. **Информирование**
+       - Обеспечить прозрачность данных мониторинга
+       - Регулярно публиковать отчеты о состоянии качества воды
+       - Информировать население о состоянии водных ресурсов
+    """)
+    
+    # Summary box
+    st.markdown("## Заключение")
+    
+    st.info("""
+    💧 **Общее состояние:** Система мониторинга показывает, что качество воды в исследуемых точках 
+    требует постоянного контроля и принятия мер по предотвращению дальнейшего ухудшения экологической ситуации.
+    
+    ✅ **Позитивные аспекты:** Систематический сбор данных позволяет отслеживать динамику изменений и своевременно 
+    реагировать на негативные тенденции.
+    
+    ⚠️ **Требует внимания:** Необходимо усилить контроль за концентрацией тяжелых металлов и разработать 
+    комплексные меры по улучшению ситуации.
+    """)
+
+
 # Footer
 st.markdown("---")
 st.markdown("""
     <div style='text-align: center; color: gray;'>
-        <p>Система мониторинга качества воды | 2020-2023</p>
+        <p>Система мониторинга качества воды</p>
         <p>Данные обновлены: Февраль 2026</p>
     </div>
     """, unsafe_allow_html=True)
