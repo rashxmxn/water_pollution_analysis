@@ -155,8 +155,131 @@ st.sidebar.info("""
 
 if page == "Обзор":
     st.title("Обзор качества воды")
-    st.markdown("### Общая информация о состоянии водных ресурсов")
-    st.markdown("## Классы качества воды по годам")
+    st.markdown("### Панель управления мониторингом водных ресурсов")
+    
+    index_filtered = index_df[index_df['Year'].between(2020, 2023)]
+    metals_filtered = metals_df[metals_df['Year'].between(2020, 2023)]
+    discharge_filtered = discharge_df[discharge_df['Year'].between(2020, 2023)]
+    
+    st.markdown("## Ключевые показатели")
+    
+    data_2020 = index_filtered[index_filtered['Year'] == 2020]
+    data_2023 = index_filtered[index_filtered['Year'] == 2023]
+    
+    if not data_2020.empty and not data_2023.empty:
+        quality_2020 = data_2020[['T1', 'T2', 'T3', 'T4']].mean().mean()
+        quality_2023 = data_2023[['T1', 'T2', 'T3', 'T4']].mean().mean()
+        quality_change = quality_2023 - quality_2020
+    else:
+        quality_2023 = index_filtered[['T1', 'T2', 'T3', 'T4']].mean().mean()
+        quality_change = 0
+    
+    metals_2023 = metals_filtered[metals_filtered['Year'] == 2023]
+    avg_metals_2023 = metals_2023['Value'].mean() if not metals_2023.empty else metals_filtered['Value'].mean()
+    
+    location_avg_quality = {loc: index_filtered[loc].mean() for loc in ['T1', 'T2', 'T3', 'T4']}
+    best_location = min(location_avg_quality, key=location_avg_quality.get)
+    worst_location = max(location_avg_quality, key=location_avg_quality.get)
+    
+    total_measurements = len(metals_filtered)
+    
+    cols = st.columns(4)
+    
+    with cols[0]:
+        st.metric(
+            label="Средний класс качества 2023",
+            value=f"{quality_2023:.1f}",
+            delta=f"{quality_change:+.1f} с 2020" if quality_change != 0 else None,
+            delta_color="inverse"
+        )
+    
+    with cols[1]:
+        st.metric(
+            label="Лучшая точка мониторинга",
+            value=best_location,
+            delta=f"Класс {location_avg_quality[best_location]:.1f}"
+        )
+    
+    with cols[2]:
+        st.metric(
+            label="Средняя концентрация металлов",
+            value=f"{avg_metals_2023:.4f} мг/л",
+            delta="2023"
+        )
+    
+    with cols[3]:
+        st.metric(
+            label="Всего измерений",
+            value=f"{total_measurements}",
+            delta="2020-2023"
+        )
+    
+    st.markdown("---")
+    
+    st.markdown("## Точки мониторинга")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        location_summary = []
+        for loc in ['T1', 'T2', 'T3', 'T4']:
+            avg_quality = location_avg_quality[loc]
+            
+            if not data_2023.empty:
+                current_quality = data_2023[loc].values[0]
+            else:
+                current_quality = avg_quality
+            
+            loc_metals = metals_filtered[metals_filtered['Location'] == loc]
+            avg_metals = loc_metals['Value'].mean() if not loc_metals.empty else 0
+            
+            if avg_quality <= 2:
+                status = "Хорошо"
+            elif avg_quality <= 3:
+                status = "Умеренно"
+            else:
+                status = "Требует внимания"
+            
+            location_summary.append({
+                'Статус': status,
+                'Точка': loc,
+                'Текущий класс (2023)': int(current_quality),
+                'Средний класс': f"{avg_quality:.1f}",
+                'Ср. концентрация металлов': f"{avg_metals:.4f}"
+            })
+        
+        summary_df = pd.DataFrame(location_summary)
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+    
+    with col2:
+        fig = go.Figure()
+        
+        colors_map = {'T1': '#3498db', 'T2': '#2ecc71', 'T3': '#e74c3c', 'T4': '#f39c12'}
+        
+        for location in ['T1', 'T2', 'T3', 'T4']:
+            avg_val = location_avg_quality[location]
+            fig.add_trace(go.Bar(
+                x=[location],
+                y=[avg_val],
+                name=location,
+                marker_color=colors_map[location],
+                text=f"{avg_val:.1f}",
+                textposition='auto',
+                showlegend=False
+            ))
+        
+        fig.update_layout(
+            title="Средний класс качества по точкам (2020-2023)",
+            yaxis_title="Класс качества",
+            height=300,
+            yaxis=dict(range=[0, 5]),
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("## Динамика изменений по годам")
     
     class_desc = {
         1: "I - Очень чистая",
@@ -166,30 +289,30 @@ if page == "Обзор":
         5: "V - Грязная"
     }
     
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns([3, 1])
     
     with col1:
-        index_filtered = index_df[index_df['Year'].between(2020, 2023)]
         fig = go.Figure()
         
         for location in ['T1', 'T2', 'T3', 'T4']:
-            fig.add_trace(go.Bar(
+            fig.add_trace(go.Scatter(
                 name=location,
                 x=index_filtered['Year'],
                 y=index_filtered[location],
-                text=index_filtered[location],
-                textposition='auto',
+                mode='lines+markers',
+                line=dict(width=3),
+                marker=dict(size=10)
             ))
         
         fig.update_layout(
-            title="Water Quality Class by Year and Location",
-            xaxis_title="Year",
-            yaxis_title="Water Quality Class",
-            barmode='group',
+            title="Тренды класса качества воды",
+            xaxis_title="Год",
+            yaxis_title="Класс качества",
             height=400,
             yaxis=dict(range=[0, 6], dtick=1),
             plot_bgcolor='white',
-            paper_bgcolor='white'
+            paper_bgcolor='white',
+            hovermode='x unified'
         )
         
         st.plotly_chart(fig, use_container_width=True)
@@ -197,48 +320,164 @@ if page == "Обзор":
     with col2:
         st.markdown("### Классификация")
         for class_num, desc in class_desc.items():
-            st.markdown(f"**{desc}**")
+            st.markdown(f"**{class_num}.** {desc}")
         
         st.markdown("---")
-        st.metric("Всего точек мониторинга", "4")
-        st.metric("Период наблюдений", "2020-2023")
+        st.markdown("### Информация")
+        st.markdown(f"**Период:** 2020-2023")
+        st.markdown(f"**Точек:** 4")
+        st.markdown(f"**Металлов:** 4 (Mn, Zn, Cu, Cd)")
     
-    st.markdown("### Тепловая карта качества воды")
+    st.markdown("## Тепловая карта качества воды")
     
-    index_pivot = index_filtered.set_index('Year')[['T1', 'T2', 'T3', 'T4']]
+    col1, col2 = st.columns([2, 1])
     
-    fig = px.imshow(
-        index_pivot.T,
-        labels=dict(x="Year", y="Location", color="Class"),
-        x=index_pivot.index,
-        y=['T1', 'T2', 'T3', 'T4'],
-        color_continuous_scale='RdYlGn_r',
-        aspect="auto",
-        title="Water Quality Class Heatmap"
-    )
+    with col1:
+        index_pivot = index_filtered.set_index('Year')[['T1', 'T2', 'T3', 'T4']]
+        
+        fig = px.imshow(
+            index_pivot.T,
+            labels=dict(x="Год", y="Точка мониторинга", color="Класс"),
+            x=index_pivot.index,
+            y=['T1', 'T2', 'T3', 'T4'],
+            color_continuous_scale='RdYlGn_r',
+            aspect="auto",
+            title="Карта качества воды по годам и точкам"
+        )
+        
+        fig.update_layout(
+            height=350,
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
     
-    fig.update_layout(
-        height=300,
-        plot_bgcolor='white',
-        paper_bgcolor='white'
-    )
+    with col2:
+        st.markdown("### Интерпретация")
+        st.markdown("""
+        **Цветовая шкала:**
+        - **Зеленый**: Хорошее качество (1-2)
+        - **Желтый**: Умеренное (3)
+        - **Оранжевый**: Загрязненное (4)
+        - **Красный**: Сильно загрязненное (5)
+        
+        Темные области указывают на ухудшение качества воды.
+        """)
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("## Критические наблюдения")
     
-    st.markdown("### Статистика по точкам мониторинга (2020-2023)")
+    col1, col2, col3 = st.columns(3)
     
-    cols = st.columns(4)
+    with col1:
+        worst_year_location = []
+        for loc in ['T1', 'T2', 'T3', 'T4']:
+            for _, row in index_filtered.iterrows():
+                if row[loc] >= 4:
+                    worst_year_location.append((row['Year'], loc, row[loc]))
+        
+        if worst_year_location:
+            st.warning(f"**Обнаружено загрязнений класса IV+:** {len(worst_year_location)}")
+            for year, loc, cls in worst_year_location[:3]:
+                st.markdown(f"- {loc} ({year}): Класс {int(cls)}")
+        else:
+            st.success("Критических загрязнений не обнаружено")
     
-    for idx, location in enumerate(['T1', 'T2', 'T3', 'T4']):
-        with cols[idx]:
-            avg_class = index_filtered[location].mean()
-            current_class = index_filtered[index_filtered['Year'] == 2023][location].values[0]
+    with col2:
+        high_metals = metals_filtered[metals_filtered['Value'] > metals_filtered['Value'].quantile(0.9)]
+        n_high = len(high_metals)
+        
+        if n_high > 0:
+            st.info(f"**Повышенные концентрации металлов:** {n_high} случаев")
+            top_metal = high_metals.groupby('Metal')['Value'].count().idxmax()
+            st.markdown(f"- Чаще всего: **{top_metal}**")
+        else:
+            st.success("Концентрации в норме")
+    
+    with col3:
+        improving_locations = []
+        worsening_locations = []
+        
+        if not data_2020.empty and not data_2023.empty:
+            for loc in ['T1', 'T2', 'T3', 'T4']:
+                q_2020 = data_2020[loc].values[0]
+                q_2023 = data_2023[loc].values[0]
+                change = q_2023 - q_2020
+                
+                if change < -0.5:
+                    improving_locations.append(loc)
+                elif change > 0.5:
+                    worsening_locations.append(loc)
+        
+        if improving_locations:
+            st.success(f"**Улучшение:** {', '.join(improving_locations)}")
+        if worsening_locations:
+            st.error(f"**Ухудшение:** {', '.join(worsening_locations)}")
+        if not improving_locations and not worsening_locations:
+            st.info("**Стабильное состояние**")
+    
+    st.markdown("## Сравнение периодов")
+    
+    comparison_data = []
+    available_years = sorted(index_filtered['Year'].unique())
+    
+    if len(available_years) >= 2:
+        first_year = available_years[0]
+        last_year = available_years[-1]
+        
+        data_first = index_filtered[index_filtered['Year'] == first_year]
+        data_last = index_filtered[index_filtered['Year'] == last_year]
+        
+        if not data_first.empty and not data_last.empty:
+            for loc in ['T1', 'T2', 'T3', 'T4']:
+                q_first = data_first[loc].values[0]
+                q_last = data_last[loc].values[0]
+                
+                comparison_data.append({
+                    'Точка': loc,
+                    f'Класс {first_year}': int(q_first),
+                    f'Класс {last_year}': int(q_last),
+                    'Изменение': int(q_last) - int(q_first),
+                    'Тренд': 'Улучшение' if q_last < q_first else 'Ухудшение' if q_last > q_first else 'Стабильно'
+                })
+    
+    if comparison_data:
+        comparison_df = pd.DataFrame(comparison_data)
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            fig = go.Figure()
             
-            st.metric(
-                label=f"{location}",
-                value=f"Класс {int(current_class)}",
-                delta=f"Средний: {avg_class:.1f}"
+            fig.add_trace(go.Bar(
+                name=str(first_year),
+                x=comparison_df['Точка'],
+                y=comparison_df[f'Класс {first_year}'],
+                marker_color='lightblue'
+            ))
+            
+            fig.add_trace(go.Bar(
+                name=str(last_year),
+                x=comparison_df['Точка'],
+                y=comparison_df[f'Класс {last_year}'],
+                marker_color='darkblue'
+            ))
+            
+            fig.update_layout(
+                title=f"Сравнение качества воды: {first_year} vs {last_year}",
+                yaxis_title="Класс качества",
+                barmode='group',
+                height=350,
+                plot_bgcolor='white',
+                paper_bgcolor='white'
             )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("Недостаточно данных для сравнения периодов.")
 
 
 elif page == "Тяжелые металлы":
@@ -529,6 +768,315 @@ elif page == "Расход воды":
     
     st.plotly_chart(fig, use_container_width=True)
     
+    st.markdown("### 3D визуализация расхода воды")
+    
+    monthly_data_list = []
+    all_years = [col for col in discharge_raw.columns if isinstance(col, int) and col >= 2014]
+    
+    for idx, row in discharge_raw.iterrows():
+        for year in all_years:
+            value = row[year]
+            if pd.notna(value):
+                if isinstance(value, str):
+                    value = value.replace(',', '.')
+                try:
+                    discharge_value = float(value)
+                    monthly_data_list.append({
+                        'Year': year,
+                        'Month': idx + 1,
+                        'Discharge': discharge_value
+                    })
+                except (ValueError, TypeError):
+                    continue
+    
+    monthly_discharge_df = pd.DataFrame(monthly_data_list)
+    
+    if not monthly_discharge_df.empty:
+        pivot_data = monthly_discharge_df.pivot(index='Month', columns='Year', values='Discharge')
+        
+        fig = go.Figure(data=[go.Surface(
+            z=pivot_data.values,
+            x=pivot_data.columns,
+            y=pivot_data.index,
+            colorscale='Blues',
+            colorbar=dict(title="m³/s")
+        )])
+        
+        fig.update_layout(
+            title="3D Surface: Discharge Patterns",
+            scene=dict(
+                xaxis=dict(title='Year'),
+                yaxis=dict(title='Month', dtick=1),
+                zaxis=dict(title='Discharge (m³/s)'),
+                bgcolor='white'
+            ),
+            height=600,
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("### Тепловая карта месячных значений")
+    
+    if not monthly_discharge_df.empty:
+        pivot_heatmap = monthly_discharge_df.pivot(index='Month', columns='Year', values='Discharge')
+        
+        month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        
+        fig = px.imshow(
+            pivot_heatmap,
+            labels=dict(x="Year", y="Month", color="Discharge (m³/s)"),
+            x=pivot_heatmap.columns,
+            y=[month_names[int(m)-1] if int(m) <= 12 else str(int(m)) for m in pivot_heatmap.index],
+            color_continuous_scale='RdYlBu_r',
+            aspect="auto",
+            title="Monthly Discharge Heatmap"
+        )
+        
+        fig.update_layout(
+            height=450,
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("### Сезонный анализ")
+    
+    if not monthly_discharge_df.empty:
+        season_map = {
+            1: 'Winter', 2: 'Winter', 3: 'Spring',
+            4: 'Spring', 5: 'Spring', 6: 'Summer',
+            7: 'Summer', 8: 'Summer', 9: 'Autumn',
+            10: 'Autumn', 11: 'Autumn', 12: 'Winter'
+        }
+        
+        monthly_discharge_df['Season'] = monthly_discharge_df['Month'].map(season_map)
+        seasonal_data = monthly_discharge_df.groupby(['Year', 'Season'])['Discharge'].mean().reset_index()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig = px.line(
+                seasonal_data,
+                x='Year',
+                y='Discharge',
+                color='Season',
+                markers=True,
+                title="Seasonal Average Discharge Trends",
+                labels={'Discharge': 'Discharge (m³/s)', 'Year': 'Year'},
+                color_discrete_map={
+                    'Winter': '#3498db',
+                    'Spring': '#2ecc71',
+                    'Summer': '#f39c12',
+                    'Autumn': '#e74c3c'
+                }
+            )
+            
+            fig.update_layout(
+                height=400,
+                plot_bgcolor='white',
+                paper_bgcolor='white'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            season_avg = monthly_discharge_df.groupby('Season')['Discharge'].mean().reset_index()
+            season_order = ['Winter', 'Spring', 'Summer', 'Autumn']
+            season_avg['Season'] = pd.Categorical(season_avg['Season'], categories=season_order, ordered=True)
+            season_avg = season_avg.sort_values('Season')
+            
+            fig = px.bar(
+                season_avg,
+                x='Season',
+                y='Discharge',
+                title="Average Discharge by Season",
+                labels={'Discharge': 'Discharge (m³/s)'},
+                color='Discharge',
+                color_continuous_scale='Blues'
+            )
+            
+            fig.update_layout(
+                height=400,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("### Распределение и вариабельность")
+    
+    if not monthly_discharge_df.empty:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig = px.box(
+                monthly_discharge_df,
+                x='Year',
+                y='Discharge',
+                title="Discharge Distribution by Year",
+                labels={'Discharge': 'Discharge (m³/s)', 'Year': 'Year'}
+            )
+            
+            fig.update_layout(
+                height=400,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            fig = px.violin(
+                monthly_discharge_df,
+                y='Discharge',
+                x='Year',
+                title="Discharge Variability (Violin Plot)",
+                labels={'Discharge': 'Discharge (m³/s)', 'Year': 'Year'},
+                color='Year',
+                color_discrete_sequence=px.colors.sequential.Blues
+            )
+            
+            fig.update_layout(
+                height=400,
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("### Диапазон изменчивости и тренд")
+    
+    if not monthly_discharge_df.empty:
+        yearly_stats = monthly_discharge_df.groupby('Year')['Discharge'].agg(['mean', 'min', 'max', 'std']).reset_index()
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=yearly_stats['Year'],
+            y=yearly_stats['max'],
+            fill=None,
+            mode='lines',
+            line=dict(color='rgba(52, 152, 219, 0.3)'),
+            name='Maximum',
+            showlegend=True
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=yearly_stats['Year'],
+            y=yearly_stats['min'],
+            fill='tonexty',
+            mode='lines',
+            line=dict(color='rgba(52, 152, 219, 0.3)'),
+            name='Minimum',
+            showlegend=True
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=yearly_stats['Year'],
+            y=yearly_stats['mean'],
+            mode='lines+markers',
+            line=dict(color='rgb(41, 128, 185)', width=3),
+            marker=dict(size=10),
+            name='Average',
+            showlegend=True
+        ))
+        
+        z = np.polyfit(yearly_stats['Year'], yearly_stats['mean'], 2)
+        p = np.poly1d(z)
+        trend_line = p(yearly_stats['Year'])
+        
+        fig.add_trace(go.Scatter(
+            x=yearly_stats['Year'],
+            y=trend_line,
+            mode='lines',
+            line=dict(color='red', width=2, dash='dash'),
+            name='Trend (Polynomial)',
+            showlegend=True
+        ))
+        
+        fig.update_layout(
+            title="Discharge Range and Trend Analysis",
+            xaxis_title="Year",
+            yaxis_title="Discharge (m³/s)",
+            height=450,
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            hovermode='x unified'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("### Анализ аномалий")
+    
+    if not monthly_discharge_df.empty:
+        overall_mean = monthly_discharge_df['Discharge'].mean()
+        overall_std = monthly_discharge_df['Discharge'].std()
+        
+        monthly_discharge_df['Anomaly'] = (monthly_discharge_df['Discharge'] - overall_mean) / overall_std
+        monthly_discharge_df['Is_Anomaly'] = monthly_discharge_df['Anomaly'].abs() > 2
+        
+        fig = go.Figure()
+        
+        normal_data = monthly_discharge_df[~monthly_discharge_df['Is_Anomaly']]
+        anomaly_data = monthly_discharge_df[monthly_discharge_df['Is_Anomaly']]
+        
+        fig.add_trace(go.Scatter(
+            x=normal_data['Year'] + (normal_data['Month'] - 1) / 12,
+            y=normal_data['Discharge'],
+            mode='markers',
+            marker=dict(size=6, color='lightblue'),
+            name='Normal',
+            text=[f"Year: {y}<br>Month: {m}<br>Discharge: {d:.2f} m³/s" 
+                  for y, m, d in zip(normal_data['Year'], normal_data['Month'], normal_data['Discharge'])],
+            hovertemplate='<b>%{text}</b><extra></extra>'
+        ))
+        
+        if not anomaly_data.empty:
+            fig.add_trace(go.Scatter(
+                x=anomaly_data['Year'] + (anomaly_data['Month'] - 1) / 12,
+                y=anomaly_data['Discharge'],
+                mode='markers',
+                marker=dict(size=12, color='red', symbol='x'),
+                name='Anomaly (>2σ)',
+                text=[f"Year: {y}<br>Month: {m}<br>Discharge: {d:.2f} m³/s<br>Anomaly Score: {a:.2f}σ" 
+                      for y, m, d, a in zip(anomaly_data['Year'], anomaly_data['Month'], 
+                                            anomaly_data['Discharge'], anomaly_data['Anomaly'])],
+                hovertemplate='<b>%{text}</b><extra></extra>'
+            ))
+        
+        fig.add_hline(y=overall_mean, line_dash="dash", line_color="green", 
+                      annotation_text=f"Mean: {overall_mean:.2f}")
+        fig.add_hline(y=overall_mean + 2*overall_std, line_dash="dot", line_color="orange",
+                      annotation_text="+2σ")
+        fig.add_hline(y=overall_mean - 2*overall_std, line_dash="dot", line_color="orange",
+                      annotation_text="-2σ")
+        
+        fig.update_layout(
+            title="Discharge Anomaly Detection",
+            xaxis_title="Year",
+            yaxis_title="Discharge (m³/s)",
+            height=450,
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Средний расход", f"{overall_mean:.2f} m³/s")
+        with col2:
+            st.metric("Стандартное отклонение", f"{overall_std:.2f} m³/s")
+        with col3:
+            n_anomalies = anomaly_data.shape[0]
+            st.metric("Количество аномалий", f"{n_anomalies}")
+    
     st.markdown("### Детальные данные по годам")
     all_years = [col for col in discharge_raw.columns if isinstance(col, int) and col >= 2014]
     detailed_data = discharge_raw[all_years].copy()
@@ -624,22 +1172,253 @@ elif page == "Сравнение точек":
     
     st.plotly_chart(fig, use_container_width=True)
     
-    st.markdown("## Сводная таблица по точкам")
+    st.markdown("## Параллельные координаты - многомерное сравнение")
     
-    summary_by_location = metals_filtered.groupby('Location').agg({
-        'Value': ['mean', 'median', 'min', 'max']
-    }).round(4)
+    parallel_data = metals_filtered.groupby(['Location', 'Metal'])['Value'].mean().reset_index()
+    parallel_pivot = parallel_data.pivot(index='Location', columns='Metal', values='Value').reset_index()
     
-    summary_by_location.columns = ['Mean Concentration', 'Median', 'Min', 'Max']
+    for location in ['T1', 'T2', 'T3', 'T4']:
+        avg_quality_class = index_filtered[location].mean()
+        parallel_pivot.loc[parallel_pivot['Location'] == location, 'Avg_Quality_Class'] = avg_quality_class
     
-    latest_year = index_filtered[index_filtered['Year'] == 2023]
-    quality_classes = latest_year.set_index('Year')[['T1', 'T2', 'T3', 'T4']].T
-    quality_classes.columns = ['Quality Class 2023']
-    quality_classes.index.name = 'Location'
+    location_colors = {'T1': 0, 'T2': 1, 'T3': 2, 'T4': 3}
+    parallel_pivot['Location_Num'] = parallel_pivot['Location'].map(location_colors)
     
-    combined_summary = pd.concat([summary_by_location, quality_classes], axis=1)
+    dimensions = []
+    for col in ['Mn', 'Zn', 'Cu', 'Cd']:
+        if col in parallel_pivot.columns:
+            dimensions.append(dict(
+                label=col + ' (mg/L)',
+                values=parallel_pivot[col]
+            ))
     
-    st.dataframe(combined_summary, use_container_width=True)
+    if 'Avg_Quality_Class' in parallel_pivot.columns:
+        dimensions.append(dict(
+            label='Quality Class',
+            values=parallel_pivot['Avg_Quality_Class']
+        ))
+    
+    fig = go.Figure(data=go.Parcoords(
+        line=dict(
+            color=parallel_pivot['Location_Num'],
+            colorscale=[[0, '#3498db'], [0.33, '#2ecc71'], [0.66, '#e74c3c'], [1, '#f39c12']],
+            showscale=True,
+            cmin=0,
+            cmax=3,
+            colorbar=dict(
+                title="Location",
+                tickvals=[0, 1, 2, 3],
+                ticktext=['T1', 'T2', 'T3', 'T4']
+            )
+        ),
+        dimensions=dimensions
+    ))
+    
+    fig.update_layout(
+        title="Multi-dimensional Comparison: Metals and Quality",
+        height=500,
+        plot_bgcolor='white',
+        paper_bgcolor='white'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("## Корреляция между точками мониторинга")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        correlation_data = {}
+        for metal in ['Mn', 'Zn', 'Cu', 'Cd']:
+            metal_data = metals_filtered[metals_filtered['Metal'] == metal]
+            metal_pivot = metal_data.pivot_table(index=['Year', 'Period'], columns='Location', values='Value')
+            correlation_data[metal] = metal_pivot.corr()
+        
+        overall_corr = sum(correlation_data.values()) / len(correlation_data)
+        
+        fig = px.imshow(
+            overall_corr,
+            labels=dict(x="Location", y="Location", color="Correlation"),
+            x=overall_corr.columns,
+            y=overall_corr.index,
+            color_continuous_scale='RdBu',
+            aspect="auto",
+            title="Average Correlation Between Locations",
+            zmin=-1,
+            zmax=1
+        )
+        
+        fig.update_layout(
+            height=400,
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        corr_text = """
+        **Интерпретация корреляции:**
+        
+        - **> 0.7**: Сильная положительная корреляция
+        - **0.3 - 0.7**: Умеренная корреляция
+        - **-0.3 - 0.3**: Слабая или нет корреляции
+        - **< -0.3**: Отрицательная корреляция
+        
+        Высокая корреляция между точками указывает на общие источники загрязнения или схожие гидрологические условия.
+        """
+        st.markdown(corr_text)
+        
+        st.markdown("**Средняя корреляция по парам:**")
+        for i, loc1 in enumerate(['T1', 'T2', 'T3', 'T4']):
+            for loc2 in ['T1', 'T2', 'T3', 'T4'][i+1:]:
+                corr_val = overall_corr.loc[loc1, loc2]
+                st.metric(f"{loc1} ↔ {loc2}", f"{corr_val:.3f}")
+    
+    st.markdown("## 3D сравнительная визуализация")
+    
+    metals_3d = metals_filtered.groupby(['Location', 'Year', 'Metal'])['Value'].mean().reset_index()
+    
+    total_metal_by_loc_year = metals_3d.groupby(['Location', 'Year'])['Value'].sum().reset_index()
+    total_metal_by_loc_year.columns = ['Location', 'Year', 'Total_Metals']
+    
+    quality_by_loc_year = index_filtered.melt(id_vars=['Year'], var_name='Location', value_name='Quality_Class')
+    
+    data_3d = total_metal_by_loc_year.merge(quality_by_loc_year, on=['Location', 'Year'])
+    
+    location_colors_map = {'T1': '#3498db', 'T2': '#2ecc71', 'T3': '#e74c3c', 'T4': '#f39c12'}
+    
+    fig = go.Figure()
+    
+    for location in ['T1', 'T2', 'T3', 'T4']:
+        loc_data = data_3d[data_3d['Location'] == location]
+        
+        fig.add_trace(go.Scatter3d(
+            x=loc_data['Year'],
+            y=loc_data['Total_Metals'],
+            z=loc_data['Quality_Class'],
+            mode='markers+lines',
+            name=location,
+            marker=dict(
+                size=12,
+                color=location_colors_map[location],
+                line=dict(color='white', width=2)
+            ),
+            line=dict(color=location_colors_map[location], width=4),
+            text=[f"{loc}<br>Year: {y}<br>Total Metals: {tm:.4f} mg/L<br>Quality Class: {qc}" 
+                  for loc, y, tm, qc in zip(loc_data['Location'], loc_data['Year'], 
+                                            loc_data['Total_Metals'], loc_data['Quality_Class'])],
+            hovertemplate='<b>%{text}</b><extra></extra>'
+        ))
+    
+    fig.update_layout(
+        title="3D Location Comparison: Year × Total Metals × Quality Class",
+        scene=dict(
+            xaxis=dict(title='Year', gridcolor='lightgray', dtick=1),
+            yaxis=dict(title='Total Metal Concentration (mg/L)', gridcolor='lightgray'),
+            zaxis=dict(title='Water Quality Class', gridcolor='lightgray', dtick=1),
+            bgcolor='white'
+        ),
+        height=600,
+        showlegend=True,
+        paper_bgcolor='white'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("## Сравнительный рейтинг точек")
+    
+    ranking_scores = {}
+    
+    for location in ['T1', 'T2', 'T3', 'T4']:
+        loc_metals = metals_filtered[metals_filtered['Location'] == location]['Value'].mean()
+        loc_quality = index_filtered[location].mean()
+        
+        ranking_scores[location] = {
+            'Avg_Metal_Concentration': loc_metals,
+            'Avg_Quality_Class': loc_quality,
+            'Metal_Rank': 0,
+            'Quality_Rank': 0
+        }
+    
+    sorted_by_metals = sorted(ranking_scores.items(), key=lambda x: x[1]['Avg_Metal_Concentration'])
+    for rank, (loc, _) in enumerate(sorted_by_metals, 1):
+        ranking_scores[loc]['Metal_Rank'] = rank
+    
+    sorted_by_quality = sorted(ranking_scores.items(), key=lambda x: x[1]['Avg_Quality_Class'])
+    for rank, (loc, _) in enumerate(sorted_by_quality, 1):
+        ranking_scores[loc]['Quality_Rank'] = rank
+    
+    for loc in ranking_scores:
+        ranking_scores[loc]['Overall_Score'] = (ranking_scores[loc]['Metal_Rank'] + 
+                                                 ranking_scores[loc]['Quality_Rank']) / 2
+    
+    ranking_df = pd.DataFrame(ranking_scores).T
+    ranking_df = ranking_df.sort_values('Overall_Score')
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        fig = go.Figure()
+        
+        fig.add_trace(go.Bar(
+            y=ranking_df.index,
+            x=ranking_df['Metal_Rank'],
+            name='Metal Concentration Rank',
+            orientation='h',
+            marker=dict(color='lightcoral')
+        ))
+        
+        fig.add_trace(go.Bar(
+            y=ranking_df.index,
+            x=ranking_df['Quality_Rank'],
+            name='Quality Class Rank',
+            orientation='h',
+            marker=dict(color='lightblue')
+        ))
+        
+        fig.update_layout(
+            title="Location Ranking (1=Best, 4=Worst)",
+            xaxis_title="Rank",
+            yaxis_title="Location",
+            barmode='group',
+            height=400,
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+    
+    st.markdown("## Статистическое сравнение")
+    
+    stats_comparison = []
+    
+    for location in ['T1', 'T2', 'T3', 'T4']:
+        loc_data = metals_filtered[metals_filtered['Location'] == location]['Value']
+        
+        stats_comparison.append({
+            'Location': location,
+            'Mean': loc_data.mean(),
+            'Median': loc_data.median(),
+            'Std Dev': loc_data.std(),
+            'Min': loc_data.min(),
+            'Max': loc_data.max(),
+            'CV (%)': (loc_data.std() / loc_data.mean() * 100) if loc_data.mean() != 0 else 0,
+            'Sample Size': len(loc_data)
+        })
+    
+    stats_df = pd.DataFrame(stats_comparison).set_index('Location')
+    stats_df = stats_df.round(4)
+    
+    st.dataframe(stats_df, use_container_width=True)
+    
+    st.info("""
+    **Коэффициент вариации (CV)** показывает относительную изменчивость данных:
+    - CV < 15%: Низкая вариабельность (стабильное качество)
+    - CV 15-30%: Умеренная вариабельность
+    - CV > 30%: Высокая вариабельность (нестабильное качество)
+    """)
 
 
 elif page == "Тренды":
@@ -953,13 +1732,13 @@ elif page == "Выводы":
     st.markdown("## Заключение")
     
     st.info("""
-    💧 **Общее состояние:** Система мониторинга показывает, что качество воды в исследуемых точках 
+    **Общее состояние:** Система мониторинга показывает, что качество воды в исследуемых точках 
     требует постоянного контроля и принятия мер по предотвращению дальнейшего ухудшения экологической ситуации.
     
-    ✅ **Позитивные аспекты:** Систематический сбор данных позволяет отслеживать динамику изменений и своевременно 
+    **Позитивные аспекты:** Систематический сбор данных позволяет отслеживать динамику изменений и своевременно 
     реагировать на негативные тенденции.
     
-    ⚠️ **Требует внимания:** Необходимо усилить контроль за концентрацией тяжелых металлов и разработать 
+    **Требует внимания:** Необходимо усилить контроль за концентрацией тяжелых металлов и разработать 
     комплексные меры по улучшению ситуации.
     """)
 
