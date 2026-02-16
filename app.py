@@ -30,6 +30,15 @@ def load_heavy_metals_data():
     df = pd.read_excel('data/Данные по ТМ.xlsx', sheet_name='Sheet1')
     
     data_list = []
+    current_month_en = 'January'
+    current_month_num = 1
+    
+    month_map = {
+        'Январь': ('January', 1), 'Февраль': ('February', 2), 'Март': ('March', 3),
+        'Апрель': ('April', 4), 'Май': ('May', 5), 'Июнь': ('June', 6),
+        'Июль': ('July', 7), 'Август': ('August', 8), 'Сентябрь': ('September', 9),
+        'Октябрь': ('October', 10), 'Ноябрь': ('November', 11), 'Декабрь': ('December', 12)
+    }
     
     for idx, row in df.iterrows():
         first_col = str(row.iloc[0])
@@ -39,13 +48,12 @@ def load_heavy_metals_data():
             year = int(current_period.split('-')[0])
             month_ru = current_period.split('-')[1]
             
-            month_map = {
-                'Январь': 'January', 'Февраль': 'February', 'Март': 'March',
-                'Апрель': 'April', 'Май': 'May', 'Июнь': 'June',
-                'Июль': 'July', 'Август': 'August', 'Сентябрь': 'September',
-                'Октябрь': 'October', 'Ноябрь': 'November', 'Декабрь': 'December'
-            }
-            month_en = month_map.get(month_ru, month_ru)
+            if month_ru in month_map:
+                current_month_en, current_month_num = month_map[month_ru]
+            else:
+                current_month_en = month_ru
+                current_month_num = 1
+                
         elif first_col in ['Mn', 'Zn', 'Cu', 'Cd']:
             metal = first_col
             for col_idx, col in enumerate(df.columns[1:]):
@@ -79,14 +87,19 @@ def load_heavy_metals_data():
                     
                     data_list.append({
                         'Year': data_year,
-                        'Month': month_en if 'current_period' in locals() else 'Unknown',
-                        'Period': f"{data_year}-{month_en if 'current_period' in locals() else 'Unknown'}",
+                        'Month': current_month_en,
+                        'Month_Num': current_month_num,
+                        'Period': f"{data_year}-{current_month_en}",
                         'Metal': metal,
                         'Location': t_point,
                         'Value': float(value)
                     })
     
-    return pd.DataFrame(data_list)
+    result_df = pd.DataFrame(data_list)
+    result_df['Date_Sort'] = pd.to_datetime(result_df['Year'].astype(str) + '-' + result_df['Month_Num'].astype(str), format='%Y-%m')
+    result_df = result_df.sort_values('Date_Sort').reset_index(drop=True)
+    
+    return result_df
 
 
 @st.cache_data
@@ -189,8 +202,8 @@ if page == "Обзор":
     with cols[0]:
         st.metric(
             label="Средний класс качества 2023",
-            value=f"{quality_2023:.1f}",
-            delta=f"{quality_change:+.1f} с 2020" if quality_change != 0 else None,
+            value=f"{quality_2023:.0f}",
+            delta=f"{quality_change:+.0f} с 2020" if quality_change != 0 else None,
             delta_color="inverse"
         )
     
@@ -198,7 +211,7 @@ if page == "Обзор":
         st.metric(
             label="Лучшая точка мониторинга",
             value=best_location,
-            delta=f"Класс {location_avg_quality[best_location]:.1f}"
+            delta=f"Класс {location_avg_quality[best_location]:.0f}"
         )
     
     with cols[2]:
@@ -245,7 +258,7 @@ if page == "Обзор":
                 'Статус': status,
                 'Точка': loc,
                 'Текущий класс (2023)': int(current_quality),
-                'Средний класс': f"{avg_quality:.1f}",
+                'Средний класс': int(round(avg_quality)),
                 'Ср. концентрация металлов': f"{avg_metals:.4f}"
             })
         
@@ -270,8 +283,8 @@ if page == "Обзор":
             ))
         
         fig.update_layout(
-            title="Средний класс качества по точкам (2020-2023)",
-            yaxis_title="Класс качества",
+            title="Average Quality Class by Location (2020-2023)",
+            yaxis_title="Quality Class",
             height=300,
             yaxis=dict(range=[0, 5]),
             plot_bgcolor='white',
@@ -306,10 +319,11 @@ if page == "Обзор":
             ))
         
         fig.update_layout(
-            title="Тренды класса качества воды",
-            xaxis_title="Год",
-            yaxis_title="Класс качества",
+            title="Water Quality Class Trends",
+            xaxis_title="Year",
+            yaxis_title="Quality Class",
             height=400,
+            xaxis=dict(dtick=1),
             yaxis=dict(range=[0, 6], dtick=1),
             plot_bgcolor='white',
             paper_bgcolor='white',
@@ -329,7 +343,7 @@ if page == "Обзор":
         st.markdown(f"**Точек:** 4")
         st.markdown(f"**Металлов:** 4 (Mn, Zn, Cu, Cd)")
     
-    st.markdown("## Тепловая карта качества воды")
+    st.markdown("## Water Quality Heatmap")
     
     col1, col2 = st.columns([2, 1])
     
@@ -338,16 +352,17 @@ if page == "Обзор":
         
         fig = px.imshow(
             index_pivot.T,
-            labels=dict(x="Год", y="Точка мониторинга", color="Класс"),
+            labels=dict(x="Year", y="Monitoring Point", color="Class"),
             x=index_pivot.index,
             y=['T1', 'T2', 'T3', 'T4'],
             color_continuous_scale='RdYlGn_r',
             aspect="auto",
-            title="Карта качества воды по годам и точкам"
+            title="Water Quality Heatmap by Year and Location"
         )
         
         fig.update_layout(
             height=350,
+            xaxis=dict(dtick=1),
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
@@ -355,16 +370,128 @@ if page == "Обзор":
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
+        st.markdown("### Interpretation")
+        st.markdown("""
+        **Color Scale:**
+        - **Green**: Good quality (1-2)
+        - **Yellow**: Moderate (3)
+        - **Orange**: Polluted (4)
+        - **Red**: Heavily polluted (5)
+        
+        Darker areas indicate deteriorating water quality.
+        """)
+    
+    st.markdown("## Комплексный индекс загрязнения")
+    
+    st.markdown("""
+    Анализ взаимосвязи между классом качества воды (КИЗВ) и суммарной концентрацией тяжелых металлов.
+    Комплексный подход позволяет оценить общую экологическую нагрузку на водный объект.
+    """)
+    
+    total_metals_by_loc_year = metals_filtered.groupby(['Location', 'Year'])['Value'].sum().reset_index()
+    total_metals_by_loc_year.columns = ['Location', 'Year', 'Total_Metals']
+    
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=['T1 - Comprehensive Analysis', 'T2 - Comprehensive Analysis', 
+                        'T3 - Comprehensive Analysis', 'T4 - Comprehensive Analysis'],
+        specs=[[{'secondary_y': True}, {'secondary_y': True}],
+               [{'secondary_y': True}, {'secondary_y': True}]],
+        vertical_spacing=0.12,
+        horizontal_spacing=0.1
+    )
+    
+    locations = ['T1', 'T2', 'T3', 'T4']
+    positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
+    colors_map = {'T1': '#3498db', 'T2': '#2ecc71', 'T3': '#e74c3c', 'T4': '#f39c12'}
+    
+    for location, (row, col) in zip(locations, positions):
+        quality_data = index_filtered[['Year', location]].copy()
+        quality_data.columns = ['Year', 'Quality_Class']
+        
+        metals_data = total_metals_by_loc_year[total_metals_by_loc_year['Location'] == location]
+        
+        fig.add_trace(
+            go.Bar(
+                x=quality_data['Year'],
+                y=quality_data['Quality_Class'],
+                name=f'{location} - Quality Class',
+                marker_color=colors_map[location],
+                opacity=0.6,
+                showlegend=(row == 1 and col == 1)
+            ),
+            row=row, col=col, secondary_y=False
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=metals_data['Year'],
+                y=metals_data['Total_Metals'],
+                name=f'{location} - Σ Metals',
+                mode='lines+markers',
+                line=dict(color='darkred', width=3),
+                marker=dict(size=10, symbol='diamond'),
+                showlegend=(row == 1 and col == 1)
+            ),
+            row=row, col=col, secondary_y=True
+        )
+    
+    fig.update_xaxes(title_text="Year", dtick=1, row=2, col=1)
+    fig.update_xaxes(title_text="Year", dtick=1, row=2, col=2)
+    
+    fig.update_yaxes(title_text="Quality Class", range=[0, 5.5], row=1, col=1, secondary_y=False)
+    fig.update_yaxes(title_text="Quality Class", range=[0, 5.5], row=2, col=1, secondary_y=False)
+    
+    fig.update_yaxes(title_text="Σ Metals (mg/L)", row=1, col=2, secondary_y=True)
+    fig.update_yaxes(title_text="Σ Metals (mg/L)", row=2, col=2, secondary_y=True)
+    
+    fig.update_layout(
+        height=700,
+        title_text="Relationship between Water Quality Class and Total Metal Concentration",
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        hovermode='x unified'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
         st.markdown("### Интерпретация")
         st.markdown("""
-        **Цветовая шкала:**
-        - **Зеленый**: Хорошее качество (1-2)
-        - **Желтый**: Умеренное (3)
-        - **Оранжевый**: Загрязненное (4)
-        - **Красный**: Сильно загрязненное (5)
+        **Комплексный индекс загрязнения объединяет:**
+        - **Класс качества (1-5)**: Интегральная оценка состояния водного объекта
+        - **Σ металлов**: Суммарная концентрация Mn + Zn + Cu + Cd
+      """)
+    
+    with col2:
+        st.markdown("### Корреляционный анализ")
         
-        Темные области указывают на ухудшение качества воды.
-        """)
+        correlation_results = []
+        for location in locations:
+            quality_data_loc = index_filtered[['Year', location]].copy()
+            quality_data_loc.columns = ['Year', 'Quality']
+            
+            metals_data_loc = total_metals_by_loc_year[total_metals_by_loc_year['Location'] == location][['Year', 'Total_Metals']].copy()
+            
+            merged = quality_data_loc.merge(metals_data_loc, on='Year')
+            
+            if len(merged) > 1:
+                corr = merged['Quality'].corr(merged['Total_Metals'])
+                if not pd.isna(corr):
+                    correlation_results.append({
+                        'Точка': location,
+                        'Корреляция': f"{corr:.3f}",
+                        'Интерпретация': 'Сильная' if abs(corr) > 0.7 else 'Умеренная' if abs(corr) > 0.4 else 'Слабая'
+                    })
+        
+        if correlation_results:
+            corr_df = pd.DataFrame(correlation_results)
+            st.dataframe(corr_df, use_container_width=True, hide_index=True)
+            st.caption("Положительная корреляция: рост металлов → ухудшение класса качества")
+    
+    st.markdown("---")
     
     st.markdown("## Критические наблюдения")
     
@@ -465,8 +592,8 @@ if page == "Обзор":
             ))
             
             fig.update_layout(
-                title=f"Сравнение качества воды: {first_year} vs {last_year}",
-                yaxis_title="Класс качества",
+                title=f"Water Quality Comparison: {first_year} vs {last_year}",
+                yaxis_title="Quality Class",
                 barmode='group',
                 height=350,
                 plot_bgcolor='white',
@@ -513,7 +640,7 @@ elif page == "Тяжелые металлы":
             metal_data = metals_filtered[metals_filtered['Metal'] == metal]
             
             for location in ['T1', 'T2', 'T3', 'T4']:
-                loc_data = metal_data[metal_data['Location'] == location]
+                loc_data = metal_data[metal_data['Location'] == location].sort_values('Date_Sort')
                 
                 fig.add_trace(
                     go.Scatter(
@@ -540,7 +667,7 @@ elif page == "Тяжелые металлы":
         fig = go.Figure()
         
         for location in ['T1', 'T2', 'T3', 'T4']:
-            loc_data = metal_data[metal_data['Location'] == location]
+            loc_data = metal_data[metal_data['Location'] == location].sort_values('Date_Sort')
             
             fig.add_trace(go.Scatter(
                 x=loc_data['Period'],
@@ -651,6 +778,146 @@ elif page == "Тяжелые металлы":
     
     st.plotly_chart(fig, use_container_width=True)
     
+    st.markdown("## Суммарное загрязнение тяжелыми металлами")
+    
+    st.markdown("""
+    Анализ общей экологической нагрузки от всех контролируемых металлов (Mn, Zn, Cu, Cd).
+    Суммарная концентрация отражает комплексное воздействие на водную экосистему.
+    """)
+    
+    total_metals = metals_filtered.groupby(['Year', 'Month_Num', 'Location', 'Period', 'Date_Sort'])['Value'].sum().reset_index()
+    total_metals.columns = ['Year', 'Month_Num', 'Location', 'Period', 'Date_Sort', 'Total_Metals']
+    total_metals = total_metals.sort_values('Date_Sort').reset_index(drop=True)
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        fig = go.Figure()
+        
+        colors_map = {'T1': '#3498db', 'T2': '#2ecc71', 'T3': '#e74c3c', 'T4': '#f39c12'}
+        
+        for location in ['T1', 'T2', 'T3', 'T4']:
+            loc_data = total_metals[total_metals['Location'] == location].sort_values('Date_Sort')
+            
+            fig.add_trace(go.Scatter(
+                x=loc_data['Period'],
+                y=loc_data['Total_Metals'],
+                name=location,
+                mode='lines+markers',
+                line=dict(width=2.5, color=colors_map[location]),
+                marker=dict(size=7),
+                hovertemplate='<b>%{fullData.name}</b><br>' +
+                              'Period: %{x}<br>' +
+                              'Σ Metals: %{y:.4f} mg/L<extra></extra>'
+            ))
+        
+        fig.update_layout(
+            title="Total Metal Concentration Dynamics (2020-2023)",
+            xaxis_title="Period",
+            yaxis_title="Total Concentration (mg/L)",
+            height=450,
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            hovermode='x unified',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.markdown("### Статистика")
+        
+        total_avg = total_metals['Total_Metals'].mean()
+        total_max = total_metals['Total_Metals'].max()
+        total_min = total_metals['Total_Metals'].min()
+        
+        st.metric("Средняя", f"{total_avg:.4f} мг/л")
+        st.metric("Максимум", f"{total_max:.4f} мг/л")
+        st.metric("Минимум", f"{total_min:.4f} мг/л")
+        
+        st.markdown("---")
+        
+        most_polluted = total_metals.groupby('Location')['Total_Metals'].mean().idxmax()
+        least_polluted = total_metals.groupby('Location')['Total_Metals'].mean().idxmin()
+        
+        st.markdown("**Наиболее загрязнённая:**")
+        st.info(f"**{most_polluted}**")
+        
+        st.markdown("**Наименее загрязнённая:**")
+        st.success(f"**{least_polluted}**")
+    
+    st.markdown("### Структура загрязнения: вклад каждого металла")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        metals_contribution = metals_filtered.groupby(['Year', 'Location', 'Metal'])['Value'].mean().reset_index()
+        
+        fig = px.area(
+            metals_contribution,
+            x='Year',
+            y='Value',
+            color='Metal',
+            facet_col='Location',
+            facet_col_wrap=2,
+            title="Metal Contribution to Total Pollution by Location",
+            labels={'Value': 'Concentration (mg/L)', 'Year': 'Year', 'Metal': 'Metal'},
+            color_discrete_map={
+                'Mn': '#8B4513',
+                'Zn': '#4682B4',
+                'Cu': '#CD853F',
+                'Cd': '#DC143C'
+            },
+            height=500
+        )
+        
+        fig.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        fig.update_xaxes(matches=None, dtick=1)
+        fig.update_yaxes(matches=None)
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.markdown("### Доля металлов")
+        
+        selected_location_pie = st.selectbox(
+            "Точка мониторинга:",
+            ['T1', 'T2', 'T3', 'T4'],
+            key='pie_location'
+        )
+        
+        pie_data = metals_filtered[metals_filtered['Location'] == selected_location_pie].groupby('Metal')['Value'].mean()
+        
+        fig_pie = go.Figure(data=[go.Pie(
+            labels=pie_data.index,
+            values=pie_data.values,
+            hole=0.4,
+            marker=dict(colors=['#8B4513', '#4682B4', '#CD853F', '#DC143C']),
+            textinfo='label+percent',
+            hovertemplate='<b>%{label}</b><br>Concentration: %{value:.4f} mg/L<br>Share: %{percent}<extra></extra>'
+        )])
+        
+        fig_pie.update_layout(
+            title=f"Pollution Composition - {selected_location_pie}",
+            height=350,
+            showlegend=True,
+            paper_bgcolor='white'
+        )
+        
+        st.plotly_chart(fig_pie, use_container_width=True)
+        
+        st.markdown("### Рейтинг по вкладу")
+        sorted_metals = pie_data.sort_values(ascending=False)
+        for idx, (metal, val) in enumerate(sorted_metals.items(), 1):
+            pct = (val / sorted_metals.sum()) * 100
+            st.markdown(f"**{idx}. {metal}**: {pct:.1f}%")
+    
+    st.markdown("---")
+    
     st.markdown("## 3D визуализация концентраций")
     selected_location_3d = st.selectbox(
         "Выберите точку мониторинга для 3D визуализации:",
@@ -661,7 +928,12 @@ elif page == "Тяжелые металлы":
     metals_avg['Metal_Numeric'] = metals_avg['Metal'].map(metal_map)
     loc_data = metals_avg[metals_avg['Location'] == selected_location_3d]
     
-    colors = {'T1': 'blue', 'T2': 'green', 'T3': 'red', 'T4': 'orange'}
+    metal_colors = {
+        'Mn': '#8B4513',
+        'Zn': '#4682B4',
+        'Cu': '#CD853F',
+        'Cd': '#DC143C'
+    }
     
     fig = go.Figure()
     
@@ -676,11 +948,11 @@ elif page == "Тяжелые металлы":
             name=metal,
             marker=dict(
                 size=10,
-                color=colors[selected_location_3d],
+                color=metal_colors[metal],
                 opacity=0.9,
                 line=dict(color='white', width=2)
             ),
-            line=dict(width=4, color=colors[selected_location_3d]),
+            line=dict(width=4, color=metal_colors[metal]),
             text=[f"{m}<br>Year: {y}<br>Avg: {v:.4f} mg/L" 
                   for m, y, v in zip(metal_data['Metal'], metal_data['Year'], metal_data['Value'])],
             hovertemplate='<b>%{text}</b><extra></extra>'
@@ -732,6 +1004,7 @@ elif page == "Расход воды":
             xaxis_title="Year",
             yaxis_title="Discharge (m³/s)",
             height=400,
+            xaxis=dict(dtick=1),
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
@@ -763,6 +1036,7 @@ elif page == "Расход воды":
     
     fig.update_layout(
         height=400,
+        xaxis=dict(dtick=1),
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
@@ -877,6 +1151,7 @@ elif page == "Расход воды":
             
             fig.update_layout(
                 height=400,
+                xaxis=dict(dtick=1),
                 plot_bgcolor='white',
                 paper_bgcolor='white'
             )
@@ -901,6 +1176,7 @@ elif page == "Расход воды":
             
             fig.update_layout(
                 height=400,
+                xaxis=dict(tickmode='linear'),
                 plot_bgcolor='white',
                 paper_bgcolor='white',
                 showlegend=False
@@ -924,6 +1200,7 @@ elif page == "Расход воды":
             
             fig.update_layout(
                 height=400,
+                xaxis=dict(tickmode='linear'),
                 plot_bgcolor='white',
                 paper_bgcolor='white',
                 showlegend=False
@@ -944,6 +1221,7 @@ elif page == "Расход воды":
             
             fig.update_layout(
                 height=400,
+                xaxis=dict(tickmode='linear'),
                 plot_bgcolor='white',
                 paper_bgcolor='white',
                 showlegend=False
@@ -1006,6 +1284,7 @@ elif page == "Расход воды":
             xaxis_title="Year",
             yaxis_title="Discharge (m³/s)",
             height=450,
+            xaxis=dict(dtick=1),
             plot_bgcolor='white',
             paper_bgcolor='white',
             hovermode='x unified'
@@ -1063,6 +1342,7 @@ elif page == "Расход воды":
             xaxis_title="Year",
             yaxis_title="Discharge (m³/s)",
             height=450,
+            xaxis=dict(dtick=1),
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
@@ -1166,6 +1446,7 @@ elif page == "Сравнение точек":
         xaxis_title="Year",
         yaxis_title="Water Quality Class",
         height=400,
+        xaxis=dict(dtick=1),
         yaxis=dict(range=[0, 6], dtick=1),
         plot_bgcolor='white',
         paper_bgcolor='white'
@@ -1315,7 +1596,7 @@ elif page == "Сравнение точек":
     fig.update_layout(
         title="3D Location Comparison: Year × Total Metals × Quality Class",
         scene=dict(
-            xaxis=dict(title='Year', gridcolor='lightgray', dtick=1),
+            xaxis=dict(title='Year', gridcolor='lightgray', dtick=1, tickmode='linear'),
             yaxis=dict(title='Total Metal Concentration (mg/L)', gridcolor='lightgray'),
             zaxis=dict(title='Water Quality Class', gridcolor='lightgray', dtick=1),
             bgcolor='white'
@@ -1429,7 +1710,7 @@ elif page == "Тренды":
     metals_filtered = metals_df[metals_df['Year'].between(2020, 2023)]
     index_filtered = index_df[index_df['Year'].between(2020, 2023)]
     discharge_filtered = discharge_df[discharge_df['Year'].between(2020, 2023)]
-    st.markdown("## Общие тренды по металлам")
+    st.markdown("## Overall Metal Trends")
     
     yearly_avg = metals_filtered.groupby(['Year', 'Metal'])['Value'].mean().reset_index()
     
@@ -1445,13 +1726,14 @@ elif page == "Тренды":
     
     fig.update_layout(
         height=500,
+        xaxis=dict(dtick=1),
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
     
     st.plotly_chart(fig, use_container_width=True)
     
-    st.markdown("## Тренды по точкам мониторинга")
+    st.markdown("## Trends by Monitoring Location")
     
     selected_location = st.selectbox(
         "Выберите точку:",
@@ -1473,13 +1755,14 @@ elif page == "Тренды":
     
     fig.update_layout(
         height=400,
+        xaxis=dict(dtick=1),
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
     
     st.plotly_chart(fig, use_container_width=True)
     
-    st.markdown("## Комплексный анализ показателей")
+    st.markdown("## Comprehensive Indicator Analysis")
     
     col1, col2 = st.columns(2)
     
@@ -1499,6 +1782,7 @@ elif page == "Тренды":
             xaxis_title="Year",
             yaxis_title="Quality Class",
             height=400,
+            xaxis=dict(dtick=1),
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
@@ -1522,6 +1806,7 @@ elif page == "Тренды":
             xaxis_title="Year",
             yaxis_title="Discharge (m³/s)",
             height=400,
+            xaxis=dict(dtick=1),
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
@@ -1579,8 +1864,8 @@ elif page == "Тренды":
         
         st.metric(
             label="Изменение класса качества",
-            value=f"{avg_quality_2023:.1f}" if pd.notna(avg_quality_2023) else "N/A",
-            delta=f"{quality_change:+.1f} с 2020" if quality_change != 0 else None
+            value=f"{avg_quality_2023:.0f}" if pd.notna(avg_quality_2023) else "N/A",
+            delta=f"{quality_change:+.0f} с 2020" if quality_change != 0 else None
         )
     
     st.markdown("### Детальная статистика по годам")
@@ -1621,9 +1906,9 @@ elif page == "Выводы":
         
         st.markdown(f"""
         **Основные показатели:**
-        - Лучшее качество воды: **{best_location}** (средний класс {avg_quality[best_location]:.1f})
-        - Наибольшее загрязнение: **{worst_location}** (средний класс {avg_quality[worst_location]:.1f})
-        - Средний класс качества: **{avg_quality.mean():.1f}**
+        - Лучшее качество воды: **{best_location}** (средний класс {int(round(avg_quality[best_location]))})
+        - Наибольшее загрязнение: **{worst_location}** (средний класс {int(round(avg_quality[worst_location]))})
+        - Средний класс качества: **{int(round(avg_quality.mean()))}**
         
         Качество воды на всех точках мониторинга находится в диапазоне от чистой до умеренно загрязненной.
         """)
@@ -1661,8 +1946,8 @@ elif page == "Выводы":
     with col1:
         st.metric(
             "Изменение качества воды",
-            f"{quality_2023:.1f}" if pd.notna(quality_2023) else "N/A",
-            f"{quality_trend:+.1f}" if quality_trend != 0 else None,
+            f"{quality_2023:.0f}" if pd.notna(quality_2023) else "N/A",
+            f"{quality_trend:+.0f}" if quality_trend != 0 else None,
             help="Средний класс качества воды (2020 → 2023)"
         )
     
