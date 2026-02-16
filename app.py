@@ -1471,15 +1471,20 @@ elif page == "Сравнение точек":
     dimensions = []
     for col in ['Mn', 'Zn', 'Cu', 'Cd']:
         if col in parallel_pivot.columns:
+            col_min = parallel_pivot[col].min()
+            col_max = parallel_pivot[col].max()
             dimensions.append(dict(
                 label=col + ' (mg/L)',
-                values=parallel_pivot[col]
+                values=parallel_pivot[col],
+                range=[col_min * 0.95, col_max * 1.05],
+                tickformat='.3f'
             ))
     
     if 'Avg_Quality_Class' in parallel_pivot.columns:
         dimensions.append(dict(
             label='Quality Class',
-            values=parallel_pivot['Avg_Quality_Class']
+            values=parallel_pivot['Avg_Quality_Class'],
+            tickformat='.1f'
         ))
     
     fig = go.Figure(data=go.Parcoords(
