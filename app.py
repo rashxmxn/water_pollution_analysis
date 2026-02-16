@@ -1473,18 +1473,26 @@ elif page == "Сравнение точек":
         if col in parallel_pivot.columns:
             col_min = parallel_pivot[col].min()
             col_max = parallel_pivot[col].max()
+            col_vals = parallel_pivot[col].values
+            tick_vals = [col_min, (col_min + col_max) / 2, col_max]
             dimensions.append(dict(
                 label=col + ' (mg/L)',
-                values=parallel_pivot[col],
+                values=col_vals,
                 range=[col_min * 0.95, col_max * 1.05],
-                tickformat='.3f'
+                tickvals=tick_vals,
+                ticktext=[f'{v:.4f}' for v in tick_vals]
             ))
     
     if 'Avg_Quality_Class' in parallel_pivot.columns:
+        qc_vals = parallel_pivot['Avg_Quality_Class'].values
+        qc_min = parallel_pivot['Avg_Quality_Class'].min()
+        qc_max = parallel_pivot['Avg_Quality_Class'].max()
+        qc_ticks = [qc_min, (qc_min + qc_max) / 2, qc_max]
         dimensions.append(dict(
             label='Quality Class',
-            values=parallel_pivot['Avg_Quality_Class'],
-            tickformat='.1f'
+            values=qc_vals,
+            tickvals=qc_ticks,
+            ticktext=[f'{v:.1f}' for v in qc_ticks]
         ))
     
     fig = go.Figure(data=go.Parcoords(
@@ -1505,7 +1513,7 @@ elif page == "Сравнение точек":
     
     fig.update_layout(
         title="Multi-dimensional Comparison: Metals and Quality",
-        height=500,
+        height=600,
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
