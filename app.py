@@ -436,6 +436,8 @@ if page == "Обзор":
             row=row, col=col, secondary_y=True
         )
     
+    fig.update_xaxes(title_text="Year", dtick=1, row=1, col=1)
+    fig.update_xaxes(title_text="Year", dtick=1, row=1, col=2)
     fig.update_xaxes(title_text="Year", dtick=1, row=2, col=1)
     fig.update_xaxes(title_text="Year", dtick=1, row=2, col=2)
     
