@@ -5,14 +5,12 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 
-# Force light theme
 st.set_page_config(
     page_title="Мониторинг загрязнения воды",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS to force white background
 st.markdown("""
     <style>
     .stApp {
@@ -31,19 +29,16 @@ def load_heavy_metals_data():
     """Load and process heavy metals data"""
     df = pd.read_excel('data/Данные по ТМ.xlsx', sheet_name='Sheet1')
     
-    # Process the data to create a structured format
     data_list = []
     
     for idx, row in df.iterrows():
         first_col = str(row.iloc[0])
         
-        # Check if this is a year-month header
         if '-' in first_col and any(year in first_col for year in ['2020', '2021', '2022', '2023', '2024', '2025']):
             current_period = first_col
             year = int(current_period.split('-')[0])
             month_ru = current_period.split('-')[1]
             
-            # Month mapping
             month_map = {
                 'Январь': 'January', 'Февраль': 'February', 'Март': 'March',
                 'Апрель': 'April', 'Май': 'May', 'Июнь': 'June',
@@ -52,17 +47,11 @@ def load_heavy_metals_data():
             }
             month_en = month_map.get(month_ru, month_ru)
         elif first_col in ['Mn', 'Zn', 'Cu', 'Cd']:
-            # This is a data row
             metal = first_col
-            
-            # Extract values for each year (columns are grouped by year)
             for col_idx, col in enumerate(df.columns[1:]):
                 value = row.iloc[col_idx + 1]
                 if pd.notna(value):
-                    # Determine which T point and which year
                     col_name = str(col)
-                    
-                    # Parse column name to get T point
                     if 'T1' in col_name:
                         t_point = 'T1'
                     elif 'T2' in col_name:
@@ -73,8 +62,8 @@ def load_heavy_metals_data():
                         t_point = 'T4'
                     else:
                         continue
-                    
-                    # Determine year from column name
+
+                    # Fallback to column positions when year headers are inconsistent.
                     if '2021-' in col_name or (col_idx >= 0 and col_idx < 4):
                         data_year = 2021
                     elif '2022-' in col_name or (col_idx >= 4 and col_idx < 9):
@@ -105,13 +94,8 @@ def load_index_data():
     """Load water quality index data"""
     df = pd.read_excel('data/Индекс.xlsx')
     
-    # Clean the data - keep only the first 5 rows with actual data
     df_clean = df.iloc[:5].copy()
-    
-    # Rename columns
     df_clean.columns = ['Year', 'T1', 'T2', 'T3', 'T4']
-    
-    # Convert year to int
     df_clean['Year'] = df_clean['Year'].astype(int)
     
     return df_clean
@@ -122,13 +106,9 @@ def load_discharge_data():
     """Load water discharge data"""
     df = pd.read_excel('data/расход.xlsx')
     
-    # Skip the first row (Average) and use actual data
+    # First row contains averages; use the remaining rows as observations.
     df_data = df.iloc[1:].copy()
-    
-    # Extract years from columns (skip first column 'By year')
     years = [col for col in df.columns if col != 'By year']
-    
-    # Calculate averages from the actual data
     averages = []
     for year in years:
         year_data = pd.to_numeric(df_data[year], errors='coerce')
@@ -140,13 +120,11 @@ def load_discharge_data():
         'Average_Discharge': averages
     })
     
-    # Convert year to int
     discharge_data['Year'] = discharge_data['Year'].astype(int)
     
     return discharge_data, df_data
 
 
-# Load data
 try:
     metals_df = load_heavy_metals_data()
     index_df = load_index_data()
@@ -156,7 +134,6 @@ except Exception as e:
     st.stop()
 
 
-# Sidebar
 st.sidebar.title("Навигация")
 page = st.sidebar.radio(
     "Выберите раздел:",
@@ -176,12 +153,9 @@ st.sidebar.info("""
 """)
 
 
-# Main content
 if page == "Обзор":
     st.title("Обзор качества воды")
     st.markdown("### Общая информация о состоянии водных ресурсов")
-    
-    # Water quality classes
     st.markdown("## Классы качества воды по годам")
     
     class_desc = {
@@ -195,10 +169,7 @@ if page == "Обзор":
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Filter for 2020-2023
         index_filtered = index_df[index_df['Year'].between(2020, 2023)]
-        
-        # Create bar chart
         fig = go.Figure()
         
         for location in ['T1', 'T2', 'T3', 'T4']:
@@ -232,7 +203,6 @@ if page == "Обзор":
         st.metric("Всего точек мониторинга", "4")
         st.metric("Период наблюдений", "2020-2023")
     
-    # Heatmap of quality classes
     st.markdown("### Тепловая карта качества воды")
     
     index_pivot = index_filtered.set_index('Year')[['T1', 'T2', 'T3', 'T4']]
@@ -255,7 +225,6 @@ if page == "Обзор":
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Summary statistics
     st.markdown("### Статистика по точкам мониторинга (2020-2023)")
     
     cols = st.columns(4)
@@ -276,10 +245,7 @@ elif page == "Тяжелые металлы":
     st.title("Анализ тяжелых металлов")
     st.markdown("### Концентрация тяжелых металлов в воде (мг/л)")
     
-    # Filter for 2020-2023
     metals_filtered = metals_df[metals_df['Year'].between(2020, 2023)]
-    
-    # Metal selector
     selected_metal = st.selectbox(
         "Выберите металл:",
         ['All', 'Mn', 'Zn', 'Cu', 'Cd'],
@@ -292,11 +258,9 @@ elif page == "Тяжелые металлы":
         }[x]
     )
     
-    # Time series chart
     st.markdown("## Временные ряды концентраций")
     
     if selected_metal == 'All':
-        # Create subplots for all metals
         fig = make_subplots(
             rows=2, cols=2,
             subplot_titles=('Manganese (Mn)', 'Zinc (Zn)', 'Copper (Cu)', 'Cadmium (Cd)')
@@ -331,7 +295,6 @@ elif page == "Тяжелые металлы":
         
         st.plotly_chart(fig, use_container_width=True)
     else:
-        # Single metal detailed view
         metal_data = metals_filtered[metals_filtered['Metal'] == selected_metal]
         
         fig = go.Figure()
@@ -360,13 +323,11 @@ elif page == "Тяжелые металлы":
         
         st.plotly_chart(fig, use_container_width=True)
     
-    # Box plots for distribution
     st.markdown("## Распределение концентраций металлов")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        # Box plot by location
         if selected_metal == 'All':
             plot_data = metals_filtered
         else:
@@ -390,7 +351,6 @@ elif page == "Тяжелые металлы":
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        # Box plot by year
         fig = px.box(
             plot_data,
             x='Year',
@@ -408,7 +368,6 @@ elif page == "Тяжелые металлы":
         
         st.plotly_chart(fig, use_container_width=True)
     
-    # Statistical summary
     st.markdown("## Статистическая сводка")
     
     if selected_metal == 'All':
@@ -430,7 +389,6 @@ elif page == "Тяжелые металлы":
     
     st.dataframe(summary_data, use_container_width=True)
     
-    # Heatmap of average concentrations
     st.markdown("## Средние концентрации по металлам и точкам")
     
     heatmap_data = metals_filtered.groupby(['Metal', 'Location'])['Value'].mean().unstack()
@@ -453,30 +411,20 @@ elif page == "Тяжелые металлы":
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # 3D Visualization
     st.markdown("## 3D визуализация концентраций")
-    
-    # Location selector for 3D visualization
     selected_location_3d = st.selectbox(
         "Выберите точку мониторинга для 3D визуализации:",
         ['T1', 'T2', 'T3', 'T4']
     )
-    
-    # Calculate average concentrations per year for each metal and location
     metals_avg = metals_filtered.groupby(['Year', 'Metal', 'Location'])['Value'].mean().reset_index()
-    
-    # Map metals to numeric values for 3D positioning
     metal_map = {'Mn': 1, 'Zn': 2, 'Cu': 3, 'Cd': 4}
     metals_avg['Metal_Numeric'] = metals_avg['Metal'].map(metal_map)
-    
-    # Filter by selected location
     loc_data = metals_avg[metals_avg['Location'] == selected_location_3d]
     
     colors = {'T1': 'blue', 'T2': 'green', 'T3': 'red', 'T4': 'orange'}
     
     fig = go.Figure()
     
-    # Add lines connecting points for the same metal across years
     for metal in ['Mn', 'Zn', 'Cu', 'Cd']:
         metal_data = loc_data[loc_data['Metal'] == metal].sort_values('Year')
         
@@ -524,10 +472,7 @@ elif page == "Расход воды":
     st.title("Анализ расхода воды")
     st.markdown("### Средний годовой расход воды (м³/с)")
     
-    # Show all data from 2014 onwards
     discharge_filtered = discharge_df[discharge_df['Year'] >= 2014]
-    
-    # Line chart
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -564,7 +509,6 @@ elif page == "Расход воды":
         st.metric("Максимум", f"{max_discharge:.2f} m³/s")
         st.metric("Минимум", f"{min_discharge:.2f} m³/s")
     
-    # Bar chart comparison
     st.markdown("### Сравнение по годам")
     
     fig = px.bar(
@@ -585,10 +529,7 @@ elif page == "Расход воды":
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Detailed monthly data table
     st.markdown("### Детальные данные по годам")
-    
-    # Show all data from 2014 onwards (without Month/Day column)
     all_years = [col for col in discharge_raw.columns if isinstance(col, int) and col >= 2014]
     detailed_data = discharge_raw[all_years].copy()
     detailed_data.columns = [str(year) for year in all_years]
@@ -600,11 +541,8 @@ elif page == "Сравнение точек":
     st.title("Сравнение точек мониторинга")
     st.markdown("### Сопоставление показателей между T1, T2, T3, T4")
     
-    # Filter for 2020-2023
     metals_filtered = metals_df[metals_df['Year'].between(2020, 2023)]
     index_filtered = index_df[index_df['Year'].between(2020, 2023)]
-    
-    # Radar chart for average metal concentrations
     st.markdown("## Средние концентрации металлов по точкам")
     
     avg_by_location = metals_filtered.groupby(['Location', 'Metal'])['Value'].mean().unstack()
@@ -632,12 +570,11 @@ elif page == "Сравнение точек":
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Grouped bar chart for metals
     st.markdown("## Сравнение концентраций металлов")
     
     selected_year = st.selectbox(
         "Выберите год:",
-        [2020, 2021, 2022, 2023]
+        [2021, 2022, 2023]
     )
     
     year_data = metals_filtered[metals_filtered['Year'] == selected_year]
@@ -661,7 +598,6 @@ elif page == "Сравнение точек":
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Water quality class comparison
     st.markdown("## Классы качества воды")
     
     fig = go.Figure()
@@ -688,7 +624,6 @@ elif page == "Сравнение точек":
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Table comparison
     st.markdown("## Сводная таблица по точкам")
     
     summary_by_location = metals_filtered.groupby('Location').agg({
@@ -697,7 +632,6 @@ elif page == "Сравнение точек":
     
     summary_by_location.columns = ['Mean Concentration', 'Median', 'Min', 'Max']
     
-    # Add water quality info
     latest_year = index_filtered[index_filtered['Year'] == 2023]
     quality_classes = latest_year.set_index('Year')[['T1', 'T2', 'T3', 'T4']].T
     quality_classes.columns = ['Quality Class 2023']
@@ -712,12 +646,9 @@ elif page == "Тренды":
     st.title("Анализ трендов")
     st.markdown("### Долгосрочные тренды загрязнения воды (2020-2023)")
     
-    # Filter for 2020-2023
     metals_filtered = metals_df[metals_df['Year'].between(2020, 2023)]
     index_filtered = index_df[index_df['Year'].between(2020, 2023)]
     discharge_filtered = discharge_df[discharge_df['Year'].between(2020, 2023)]
-    
-    # Overall trend analysis
     st.markdown("## Общие тренды по металлам")
     
     yearly_avg = metals_filtered.groupby(['Year', 'Metal'])['Value'].mean().reset_index()
@@ -740,7 +671,6 @@ elif page == "Тренды":
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Location-specific trends
     st.markdown("## Тренды по точкам мониторинга")
     
     selected_location = st.selectbox(
@@ -769,13 +699,11 @@ elif page == "Тренды":
     
     st.plotly_chart(fig, use_container_width=True)
     
-    # Combined indicators
     st.markdown("## Комплексный анализ показателей")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        # Water quality trend
         fig = go.Figure()
         
         for location in ['T1', 'T2', 'T3', 'T4']:
@@ -798,7 +726,6 @@ elif page == "Тренды":
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        # Discharge trend
         fig = go.Figure()
         
         fig.add_trace(go.Scatter(
@@ -821,10 +748,7 @@ elif page == "Тренды":
         
         st.plotly_chart(fig, use_container_width=True)
     
-    # Trend statistics
     st.markdown("## Статистика изменений")
-    
-    # Calculate year-over-year changes
     metals_2020 = metals_filtered[metals_filtered['Year'] == 2020]['Value'].mean()
     metals_2023 = metals_filtered[metals_filtered['Year'] == 2023]['Value'].mean()
     
@@ -879,7 +803,6 @@ elif page == "Тренды":
             delta=f"{quality_change:+.1f} с 2020" if quality_change != 0 else None
         )
     
-    # Detailed statistics table
     st.markdown("### Детальная статистика по годам")
     
     detailed_stats = metals_filtered.groupby('Year')['Value'].agg([
@@ -898,25 +821,20 @@ elif page == "Выводы":
     st.title("Выводы и рекомендации")
     st.markdown("### Анализ состояния качества воды (2020-2023)")
     
-    # Calculate key metrics for conclusions
     metals_filtered = metals_df[metals_df['Year'].between(2020, 2023)]
     index_filtered = index_df[index_df['Year'].between(2020, 2023)]
     discharge_filtered = discharge_df[discharge_df['Year'].between(2020, 2023)]
-    
-    # Overall summary
     st.markdown("## Общие выводы")
     
     st.markdown("""
     На основе комплексного анализа данных мониторинга четырех точек наблюдения за период 2020-2023 годов можно сделать следующие выводы:
     """)
     
-    # Key findings in columns
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("### Качество воды")
         
-        # Calculate average quality class by location
         avg_quality = index_filtered[['T1', 'T2', 'T3', 'T4']].mean()
         best_location = avg_quality.idxmin()
         worst_location = avg_quality.idxmax()
@@ -933,7 +851,6 @@ elif page == "Выводы":
     with col2:
         st.markdown("### Тяжелые металлы")
         
-        # Calculate average concentrations
         avg_metals = metals_filtered.groupby('Metal')['Value'].mean().sort_values(ascending=False)
         
         st.markdown("""
@@ -949,12 +866,10 @@ elif page == "Выводы":
         Наблюдается варьирование концентраций тяжелых металлов по точкам мониторинга и временным периодам.
         """)
     
-    # Trends analysis
     st.markdown("## Динамика изменений")
     
     col1, col2, col3 = st.columns(3)
     
-    # Water quality trend
     quality_2020 = index_filtered[index_filtered['Year'] == 2020][['T1', 'T2', 'T3', 'T4']].mean().mean()
     quality_2023 = index_filtered[index_filtered['Year'] == 2023][['T1', 'T2', 'T3', 'T4']].mean().mean()
     
@@ -971,7 +886,6 @@ elif page == "Выводы":
             help="Средний класс качества воды (2020 → 2023)"
         )
     
-    # Metals concentration trend
     metals_2020 = metals_filtered[metals_filtered['Year'] == 2020]['Value'].mean()
     metals_2023 = metals_filtered[metals_filtered['Year'] == 2023]['Value'].mean()
     
@@ -988,7 +902,6 @@ elif page == "Выводы":
             help="Средняя концентрация (2020 → 2023)"
         )
     
-    # Discharge trend
     discharge_2020_data = discharge_filtered[discharge_filtered['Year'] == 2020]['Average_Discharge']
     discharge_2023_data = discharge_filtered[discharge_filtered['Year'] == 2023]['Average_Discharge']
     
@@ -1011,7 +924,6 @@ elif page == "Выводы":
             help="Средний годовой расход (2020 → 2023)"
         )
     
-    # Recommendations
     st.markdown("## Рекомендации")
     
     st.markdown("""
@@ -1038,7 +950,6 @@ elif page == "Выводы":
        - Информировать население о состоянии водных ресурсов
     """)
     
-    # Summary box
     st.markdown("## Заключение")
     
     st.info("""
@@ -1053,7 +964,6 @@ elif page == "Выводы":
     """)
 
 
-# Footer
 st.markdown("---")
 st.markdown("""
     <div style='text-align: center; color: gray;'>
